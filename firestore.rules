@@ -1,0 +1,201 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidPublicUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'handle', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'handle', 'statusText', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60
+        && data.handle is string && data.handle.size() >= 2 && data.handle.size() <= 32 && data.handle.matches('^[a-z0-9_]+$')
+        && (!('statusText' in data) || (data.statusText is string && data.statusText.size() <= 100))
+        && data.updatedAt == request.time;
+    }
+
+    function isValidPrivateUserInfo(data) {
+      return data.keys().hasAll(['uid', 'lowDataDefault', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'lowDataDefault', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && (!('email' in data) || (data.email is string && data.email.size() <= 160))
+        && data.lowDataDefault is bool
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function isValidParticipantList(listVal) {
+      return listVal is list
+        && listVal.size() >= 1
+        && listVal.size() <= 20
+        && listVal[0] is string
+        && isValidId(listVal[0]);
+    }
+
+    function isValidRoom(data, roomId) {
+      return data.keys().hasAll(['id', 'name', 'type', 'createdBy', 'participantIds', 'lastMessageAt', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'type', 'createdBy', 'participantIds', 'lastMessagePreview', 'lastMessageAt', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.id == roomId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.type in ['direct', 'group']
+        && isValidId(data.createdBy)
+        && isValidParticipantList(data.participantIds)
+        && (!('lastMessagePreview' in data) || (data.lastMessagePreview is string && data.lastMessagePreview.size() <= 160))
+        && data.lastMessageAt is number
+        && data.lastMessageAt >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function isValidMessage(data, roomId, messageId) {
+      return data.keys().hasAll(['id', 'roomId', 'senderId', 'senderName', 'roomParticipantIds', 'text', 'clientCreatedAt', 'seq', 'status', 'attachmentKind', 'createdAt'])
+        && data.keys().hasOnly(['id', 'roomId', 'senderId', 'senderName', 'roomParticipantIds', 'text', 'clientCreatedAt', 'seq', 'status', 'attachmentKind', 'attachmentName', 'attachmentBytes', 'attachmentDataUrl', 'createdAt'])
+        && isValidId(data.id)
+        && data.id == messageId
+        && isValidId(data.roomId)
+        && data.roomId == roomId
+        && isValidId(data.senderId)
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 60
+        && isValidParticipantList(data.roomParticipantIds)
+        && data.text is string && data.text.size() <= 2000
+        && data.clientCreatedAt is number && data.clientCreatedAt >= 0
+        && data.seq is number && data.seq >= 0
+        && data.status in ['sent', 'delivered']
+        && data.attachmentKind in ['none', 'audio', 'image']
+        && (!('attachmentName' in data) || (data.attachmentName is string && data.attachmentName.size() <= 120))
+        && (!('attachmentBytes' in data) || (data.attachmentBytes is number && data.attachmentBytes >= 0 && data.attachmentBytes <= 120000))
+        && (!('attachmentDataUrl' in data) || (data.attachmentDataUrl is string && data.attachmentDataUrl.size() <= 120000))
+        && (data.text.size() > 0 || data.attachmentKind != 'none')
+        && data.createdAt is timestamp;
+    }
+
+    // Public User Directory (no PII)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn() && resource.data.uid is string && resource.data.handle is string;
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidPublicUser(incoming());
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidPublicUser(incoming())
+        && incoming().uid == existing().uid
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'handle', 'statusText', 'updatedAt']);
+      allow delete: if false;
+
+      // Isolated Private User Info (PII & Bandwidth Preferences)
+      match /private/{docId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(docId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && request.auth.uid == userId && resource.data.uid == request.auth.uid;
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(docId)
+          && docId == 'info'
+          && request.auth.uid == userId
+          && isValidPrivateUserInfo(incoming())
+          && incoming().createdAt == request.time;
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(docId)
+          && docId == 'info'
+          && request.auth.uid == userId
+          && isValidPrivateUserInfo(incoming())
+          && incoming().uid == existing().uid
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'lowDataDefault', 'updatedAt']);
+        allow delete: if false;
+      }
+    }
+
+    // Chat Rooms
+    match /rooms/{roomId} {
+      allow get: if isSignedIn()
+        && isValidId(roomId)
+        && request.auth.uid in existing().participantIds;
+      allow list: if isSignedIn()
+        && request.auth.uid in resource.data.participantIds;
+      allow create: if isVerifiedUser()
+        && isValidId(roomId)
+        && isValidRoom(incoming(), roomId)
+        && incoming().createdBy == request.auth.uid
+        && request.auth.uid in incoming().participantIds
+        && incoming().createdAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(roomId)
+        && isValidRoom(incoming(), roomId)
+        && request.auth.uid in existing().participantIds
+        && incoming().id == existing().id
+        && incoming().type == existing().type
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Action: Update latest message preview & timestamp when syncing message
+          (incoming().diff(existing()).affectedKeys().hasOnly(['lastMessagePreview', 'lastMessageAt', 'updatedAt'])
+            && incoming().participantIds == existing().participantIds
+            && incoming().name == existing().name)
+          ||
+          // Action: Creator updates room title or participants
+          (existing().createdBy == request.auth.uid
+            && request.auth.uid in incoming().participantIds
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'participantIds', 'updatedAt']))
+        );
+      allow delete: if false;
+
+      // Messages Subcollection
+      match /messages/{messageId} {
+        allow get: if isSignedIn()
+          && isValidId(roomId)
+          && isValidId(messageId)
+          && request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.participantIds;
+        allow list: if isSignedIn()
+          && request.auth.uid in resource.data.roomParticipantIds;
+        allow create: if isVerifiedUser()
+          && isValidId(roomId)
+          && isValidId(messageId)
+          && isValidMessage(incoming(), roomId, messageId)
+          && incoming().senderId == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/rooms/$(roomId))
+          && request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.participantIds
+          && incoming().roomParticipantIds == get(/databases/$(database)/documents/rooms/$(roomId)).data.participantIds;
+        allow update: if isVerifiedUser()
+          && isValidId(roomId)
+          && isValidId(messageId)
+          && isValidMessage(incoming(), roomId, messageId)
+          && request.auth.uid in existing().roomParticipantIds
+          && existing().status == 'sent'
+          && incoming().status == 'delivered'
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+        allow delete: if false;
+      }
+    }
+  }
+}

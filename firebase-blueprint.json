@@ -1,0 +1,231 @@
+{
+  "entities": {
+    "PublicUser": {
+      "title": "PublicUser",
+      "description": "Public directory profile for contact discovery and room participant labels (no PII).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth user ID."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "User display name shown in chats."
+        },
+        "handle": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$",
+          "description": "Unique lowercase handle for low-bandwidth lookup."
+        },
+        "statusText": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Short availability note."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last profile update."
+        }
+      },
+      "required": ["uid", "displayName", "handle", "updatedAt"]
+    },
+    "PrivateUserInfo": {
+      "title": "PrivateUserInfo",
+      "description": "Isolated private PII and bandwidth preferences accessible only by the owning user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner user ID."
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Private user email address."
+        },
+        "lowDataDefault": {
+          "type": "boolean",
+          "description": "Whether Low-Data / Text-First mode is enabled by default."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when private record was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when private record was updated."
+        }
+      },
+      "required": ["uid", "lowDataDefault", "createdAt", "updatedAt"]
+    },
+    "ChatRoom": {
+      "title": "ChatRoom",
+      "description": "1-on-1 direct chat or small group chat room (max 20 participants).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Deterministic or generated room identifier."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Room or contact display title."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["direct", "group"],
+          "description": "Conversation type."
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Creator UID."
+        },
+        "participantIds": {
+          "type": "array",
+          "description": "Bounded list of participant UIDs (1 to 20)."
+        },
+        "lastMessagePreview": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Compact preview of latest message."
+        },
+        "lastMessageAt": {
+          "type": "number",
+          "description": "Epoch milliseconds of latest message for local sorting."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["id", "name", "type", "createdBy", "participantIds", "lastMessageAt", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Lightweight message stored in a room's messages subcollection.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Client-generated idempotent message ID."
+        },
+        "roomId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent room ID."
+        },
+        "senderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Sender UID."
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Sender display name."
+        },
+        "roomParticipantIds": {
+          "type": "array",
+          "description": "Participant UIDs copied from parent room for query-enforced list rules."
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Message text payload (compressed/trimmed)."
+        },
+        "clientCreatedAt": {
+          "type": "number",
+          "description": "Client enqueue epoch ms for strict FIFO ordering."
+        },
+        "seq": {
+          "type": "number",
+          "description": "Per-sender monotonic sequence number."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["sent", "delivered"],
+          "description": "Cloud delivery status once synced."
+        },
+        "attachmentKind": {
+          "type": "string",
+          "enum": ["none", "audio", "image"],
+          "description": "Optional lightweight attachment kind."
+        },
+        "attachmentName": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Attachment filename or label."
+        },
+        "attachmentBytes": {
+          "type": "number",
+          "description": "Exact byte size shown before download/upload."
+        },
+        "attachmentDataUrl": {
+          "type": "string",
+          "maxLength": 120000,
+          "description": "Tiny compressed inline payload (<=120KB) only when explicitly attached."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when message reached cloud."
+        }
+      },
+      "required": ["id", "roomId", "senderId", "senderName", "roomParticipantIds", "text", "clientCreatedAt", "seq", "status", "attachmentKind", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/PublicUser" },
+      "description": "Public directory profiles without PII."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/PrivateUserInfo" },
+      "description": "Private user PII and preferences."
+    },
+    "/rooms/{roomId}": {
+      "schema": { "$ref": "#/entities/ChatRoom" },
+      "description": "Direct and small-group chat rooms."
+    },
+    "/rooms/{roomId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Messages belonging to a room."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "PulseLite",
+  "description": "Ultra-lightweight, offline-first messaging app built for slow, intermittent, or unstable internet connections.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
